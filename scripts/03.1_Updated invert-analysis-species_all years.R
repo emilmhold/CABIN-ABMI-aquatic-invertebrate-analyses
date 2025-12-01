@@ -138,20 +138,8 @@ table(is.na(site.information))
 # VIF approach (threshold of 5)
 vifstep(site.information[, -c(1:3)], th = 5) # Will change the variable set
 
-# This approach identifies 19 variables as colinear.
-# suggests the following variable set:
-# Variables      VIF
-# 1       MSP 2.452654
-# 2      DD18 3.479116
-# 3      bFFP 2.837100
-# 4       PAS 3.025385
-# 5       EMT 1.629182
-# 6       MAR 1.999870
-# 7        RH 2.158307
-
-
 # This variable set seems reasonable
-    ## Em's note: I'm going to use the variables Brandon initially included for comparibility.
+    ## Em's note: I'm going to use the variables Brandon initially included for comparability.
 cor.matrix <- cor(x = site.information[, c( "Temp_Mean", "DO_Mean",
                                            "Sal_Mean", "pH_Mean", "DOC", "Max_Depth",
                                             "Human_Footprint")], method = "pearson")
@@ -178,8 +166,6 @@ rm(cor.matrix)
              hist(log(site.information[, x]), main = paste0("Log ", colnames(site.information)[x]))
 
  }
-## log transformation makes most variables pretty normally distributed.
-#
 
 #################
 # Species level #
@@ -400,26 +386,6 @@ wilcox.data <- data.in %>%
 site.abundance <- NULL
 sign.results <- NULL
 
-# for (x in 3:ncol(data.in)) {
-#
-#     temp.abundance <- data.frame(Protocol = data.in$Protocol,
-#                                  Species = colnames(data.in)[x],
-#                                  Abundance = data.in[, x])
-#
-#     # Wilcoxon Test
-#     wilcox.results <- wilcox.test(temp.abundance$Abundance, temp.abundance$Protocol, paired = TRUE)
-#     if(wilcox.results$p.value < 0.05) {
-#
-#         site.abundance <- rbind(site.abundance, temp.abundance)
-#         sign.results <- rbind(sign.results, data.frame(Species = colnames(data.in)[x],
-#                                                        Significance = data.in$p.value))
-#
-#     }
-#
-#     rm(temp.abundance, wilcox.results)
-#
-# }
-
 site.abundance <- data.frame()
 sign.results <- data.frame()
 
@@ -489,19 +455,6 @@ for(spp.id in unique(site.abundance$Species)) {
 }
 
 # Species by site abundance
-# Only for species with sufficient detections using each protocol
-# site.abundance <- NULL
-#
-# for (x in 5:ncol(data.in)) {
-#
-#     temp.abundance <- data.frame(Protocol = data.in$Protocol,
-#                                  Species = colnames(data.in)[x],
-#                                  Abundance = data.in[, x])
-#     site.abundance <- rbind(site.abundance, temp.abundance)
-#
-#     rm(temp.abundance)
-#
-# }
 
 # Initialize output with consistent column names
 site.abundance <- data.frame(Protocol = character(),
@@ -906,7 +859,6 @@ png(filename = "figures/invertebrate-protocol-analyses/nmds-adjusted-counts-spec
     height = 2400,
     res = 300)
 
-# Looks like there is a lot of overlap between the two protocols
 print(ggplot() +
           #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Protocol, group = Protocol), alpha = 0.30) + # add the convex hulls
           geom_text(data = species.scores, aes(x = NMDS1, y = NMDS2, label = species), alpha = 0.5) +  # add the species labels
@@ -933,7 +885,7 @@ write.csv(perma.results, file = "output/permanova results.csv", row.names = TRUE
 # Analysis of dispersion (permadis analysis) Which one is more dispersed
 beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:4)], method = "bray"), group = data.in$Protocol)
 anova(beta.results)
-write.csv(anova(beta.results), file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permadisp-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
+#write.csv(anova(beta.results), file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permadisp-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
 
 
 #
