@@ -323,10 +323,10 @@ fine.paired_ids <- fine.data.1 %>%
     pull(Site.ID)
 
 # Filter the original data to keep only rows with these paired Site.IDs
-fine.data2 <- fine.data.1 %>%
+fine.data <- fine.data.1 %>%
     filter(Site.ID %in% fine.paired_ids) %>%
     dplyr::select(!Site.ID)
-rownames(fine.data2) <- fine.data2$SiteYear
+rownames(fine.data) <- fine.data$SiteYear
 str(fine.data2)
 
 ##UMOS
@@ -345,11 +345,11 @@ UMOS.paired_ids <- UMOS.data.1 %>%
     pull(Site.ID)
 
 # Filter the original data to keep only rows with these paired Site.IDs
-UMOS.data.2 <- UMOS.data.1 %>%
+UMOS.data <- UMOS.data.1 %>%
     filter(Site.ID %in% UMOS.paired_ids) %>%
     dplyr::select(!Site.ID)
-rownames(UMOS.data.2) <- UMOS.data.2$SiteYear
-str(UMOS.data.2)
+rownames(UMOS.data) <- UMOS.data$SiteYear
+str(UMOS.data)
 
 #### check sites ####
 # Helper function to process each dataset
@@ -477,3 +477,4 @@ rownames(UMOS.data) <- UMOS.data$SiteYear
 write_rds(coarse.data, "output/cleaned CABIN coarse data.rds")
 write_rds(fine.data, "output/cleaned CABIN fine data.rds")
 write_rds(UMOS.data, "output/cleaned CABIN UMOS data.rds")
+
