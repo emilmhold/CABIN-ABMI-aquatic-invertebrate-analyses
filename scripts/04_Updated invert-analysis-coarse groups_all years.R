@@ -510,21 +510,6 @@ for(spp.id in unique(site.abundance$Species)) {
 
 }
 
-# Species by site abundance
-# Only for species with sufficient detections using each protocol
-# site.abundance <- NULL
-#
-# for (x in 5:ncol(data.in)) {
-#
-#     temp.abundance <- data.frame(Protocol = data.in$Protocol,
-#                                  Species = colnames(data.in)[x],
-#                                  Abundance = data.in[, x])
-#     site.abundance <- rbind(site.abundance, temp.abundance)
-#
-#     rm(temp.abundance)
-#
-# }
-
 # Initialize output with consistent column names
 site.abundance <- data.frame(Protocol = character(),
                              Species = character(),
@@ -772,58 +757,6 @@ summary(simper.results)
 write.csv(summary(simper.results)$ABMI_CABIN,
           file = paste0("output/simper-analysis-adjusted-counts-coarse-group-level_2025-10-02.csv", row.names = TRUE))
 
-
-# #
-# # RDA analyses
-# #
-#
-# # The RDA analysis will help us assess which environmental covariates are associated with the communities collected
-# # using both the ABMI and CABIN methods.
-# # Consider transformations to the count based on the type of data.
-# # Look into adding a conditioning call so we can pull out the protocol effect # Feb 24th, 2021 Note Look into this more.
-#
-# rda.results <- rda(X = data.in[, -c(1,2)], Y = site.information[, -c(1:2)], z = site.information$Protocol, scale = TRUE)
-# rda.results <- summary(rda.results)
-#
-# # Visualize
-# species.coord <- data.frame(RDA1 = rda.results$species[, 1],
-#                             RDA2 = rda.results$species[, 2])
-#
-# species.subset.coord <- species.coord[rownames(summary(simper.results)$ABMI_CABIN)[1:5], ]# When adding labels, we are only adding the most import species identified in the SIMPER analysis. Figure gets muddied with too many labeles.
-#
-# site.coord <- data.frame(RDA1 = rda.results$sites[, 1],
-#                          RDA2 = rda.results$sites[, 2],
-#                          Protocol = site.information$Protocol)
-#
-# biplot.coord <- data.frame(RDA1 = rda.results$biplot[, 1],
-#                            RDA2 = rda.results$biplot[, 2])
-#
-# png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/rda-", data.type, "-species-level_", Sys.Date(), ".png"),
-#     width = 2400,
-#     height = 2400,
-#     res = 300)
-#
-# print(ggplot() +
-#           geom_point(data = site.coord, aes(x = RDA1, y = RDA2, color = Protocol), size = 3) +
-#           scale_color_manual(values = abmi_pal("main")(2)) +
-#           geom_segment(data = species.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-#                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-#                                      type = "closed"),linetype = 1, size = 0.6, colour = "#E8A396") +
-#           geom_text(data = species.subset.coord, aes(x = RDA1, y = RDA2, label = row.names(species.subset.coord))) +
-#           geom_segment(data = biplot.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-#                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-#                                      type = "closed"),linetype = 1, size = 0.6,colour = "#829EBC") +
-#           geom_text(data = biplot.coord, aes(x = RDA1, y = RDA2, label = row.names(biplot.coord))) +
-#           labs(x = paste0("RDA 1 (", format(100 *rda.results$cont[[1]][2,1], digits=4), "%)"),
-#                y = paste0("RDA 2 (", format(100 *rda.results$cont[[1]][2,2], digits=4), "%)")) +
-#           geom_hline(yintercept = 0, linetype = 2,size=  1) +
-#           geom_vline(xintercept = 0,linetype = 2,size = 1) +
-#           guides(shape=guide_legend(title=NULL,color="black"),
-#                  fill=guide_legend(title=NULL))+
-#           theme_bw())
-#
-# dev.off()
-
 #
 # NMDS
 #
@@ -1053,17 +986,6 @@ ggplot(data = spp.accum) +
     theme_bw()
 
 dev.off()
-
-# ##find the number of species observed in ABMI vs. CABIN
-# cabin.spp <- data.in %>%
-#     filter(Protocol == "CABIN") %>%
-#     select(1:4, where(~ !(is.numeric(.) && sum(., na.rm = TRUE) == 0))) #drop columns where no individuals are observed.
-# print(ncol(cabin.spp)-4) #199 species
-#
-# abmi.spp <- data.in %>%
-#     filter(Protocol == "ABMI") %>%
-#     select(1:4, where(~ !(is.numeric(.) && sum(., na.rm = TRUE) == 0))) #drop columns where no individuals are observed.
-# print(ncol(abmi.spp)-4) #212 species
 #
 # General diversity characteristics
 #
@@ -1204,57 +1126,6 @@ rownames(data.in) <- paste(data.in$Site, data.in$Protocol, sep = "_")
 #           file = paste0("output/simper-analysis-adjusted-counts-coarse-group-level_2025-10-02.csv", row.names = TRUE))
 #
 #
-# # #
-# # # RDA analyses
-# # #
-# #
-# # # The RDA analysis will help us assess which environmental covariates are associated with the communities collected
-# # # using both the ABMI and CABIN methods.
-# # # Consider transformations to the count based on the type of data.
-# # # Look into adding a conditioning call so we can pull out the protocol effect # Feb 24th, 2021 Note Look into this more.
-# #
-# # rda.results <- rda(X = data.in[, -c(1,2)], Y = site.information[, -c(1:2)], z = site.information$Protocol, scale = TRUE)
-# # rda.results <- summary(rda.results)
-# #
-# # # Visualize
-# # species.coord <- data.frame(RDA1 = rda.results$species[, 1],
-# #                             RDA2 = rda.results$species[, 2])
-# #
-# # species.subset.coord <- species.coord[rownames(summary(simper.results)$ABMI_CABIN)[1:5], ]# When adding labels, we are only adding the most import species identified in the SIMPER analysis. Figure gets muddied with too many labeles.
-# #
-# # site.coord <- data.frame(RDA1 = rda.results$sites[, 1],
-# #                          RDA2 = rda.results$sites[, 2],
-# #                          Protocol = site.information$Protocol)
-# #
-# # biplot.coord <- data.frame(RDA1 = rda.results$biplot[, 1],
-# #                            RDA2 = rda.results$biplot[, 2])
-# #
-# # png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/rda-", data.type, "-species-level_", Sys.Date(), ".png"),
-# #     width = 2400,
-# #     height = 2400,
-# #     res = 300)
-# #
-# # print(ggplot() +
-# #           geom_point(data = site.coord, aes(x = RDA1, y = RDA2, color = Protocol), size = 3) +
-# #           scale_color_manual(values = abmi_pal("main")(2)) +
-# #           geom_segment(data = species.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-# #                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-# #                                      type = "closed"),linetype = 1, size = 0.6, colour = "#E8A396") +
-# #           geom_text(data = species.subset.coord, aes(x = RDA1, y = RDA2, label = row.names(species.subset.coord))) +
-# #           geom_segment(data = biplot.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-# #                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-# #                                      type = "closed"),linetype = 1, size = 0.6,colour = "#829EBC") +
-# #           geom_text(data = biplot.coord, aes(x = RDA1, y = RDA2, label = row.names(biplot.coord))) +
-# #           labs(x = paste0("RDA 1 (", format(100 *rda.results$cont[[1]][2,1], digits=4), "%)"),
-# #                y = paste0("RDA 2 (", format(100 *rda.results$cont[[1]][2,2], digits=4), "%)")) +
-# #           geom_hline(yintercept = 0, linetype = 2,size=  1) +
-# #           geom_vline(xintercept = 0,linetype = 2,size = 1) +
-# #           guides(shape=guide_legend(title=NULL,color="black"),
-# #                  fill=guide_legend(title=NULL))+
-# #           theme_bw())
-# #
-# # dev.off()
-
 #
 # NMDS
 #
@@ -1654,57 +1525,6 @@ rownames(data.in) <- paste(data.in$Site, data.in$Protocol, sep = "_")
 #           file = paste0("output/simper-analysis-adjusted-counts-coarse-group-level_2025-10-02.csv", row.names = TRUE))
 #
 #
-# # #
-# # # RDA analyses
-# # #
-# #
-# # # The RDA analysis will help us assess which environmental covariates are associated with the communities collected
-# # # using both the ABMI and CABIN methods.
-# # # Consider transformations to the count based on the type of data.
-# # # Look into adding a conditioning call so we can pull out the protocol effect # Feb 24th, 2021 Note Look into this more.
-# #
-# # rda.results <- rda(X = data.in[, -c(1,2)], Y = site.information[, -c(1:2)], z = site.information$Protocol, scale = TRUE)
-# # rda.results <- summary(rda.results)
-# #
-# # # Visualize
-# # species.coord <- data.frame(RDA1 = rda.results$species[, 1],
-# #                             RDA2 = rda.results$species[, 2])
-# #
-# # species.subset.coord <- species.coord[rownames(summary(simper.results)$ABMI_CABIN)[1:5], ]# When adding labels, we are only adding the most import species identified in the SIMPER analysis. Figure gets muddied with too many labeles.
-# #
-# # site.coord <- data.frame(RDA1 = rda.results$sites[, 1],
-# #                          RDA2 = rda.results$sites[, 2],
-# #                          Protocol = site.information$Protocol)
-# #
-# # biplot.coord <- data.frame(RDA1 = rda.results$biplot[, 1],
-# #                            RDA2 = rda.results$biplot[, 2])
-# #
-# # png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/rda-", data.type, "-species-level_", Sys.Date(), ".png"),
-# #     width = 2400,
-# #     height = 2400,
-# #     res = 300)
-# #
-# # print(ggplot() +
-# #           geom_point(data = site.coord, aes(x = RDA1, y = RDA2, color = Protocol), size = 3) +
-# #           scale_color_manual(values = abmi_pal("main")(2)) +
-# #           geom_segment(data = species.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-# #                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-# #                                      type = "closed"),linetype = 1, size = 0.6, colour = "#E8A396") +
-# #           geom_text(data = species.subset.coord, aes(x = RDA1, y = RDA2, label = row.names(species.subset.coord))) +
-# #           geom_segment(data = biplot.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-# #                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-# #                                      type = "closed"),linetype = 1, size = 0.6,colour = "#829EBC") +
-# #           geom_text(data = biplot.coord, aes(x = RDA1, y = RDA2, label = row.names(biplot.coord))) +
-# #           labs(x = paste0("RDA 1 (", format(100 *rda.results$cont[[1]][2,1], digits=4), "%)"),
-# #                y = paste0("RDA 2 (", format(100 *rda.results$cont[[1]][2,2], digits=4), "%)")) +
-# #           geom_hline(yintercept = 0, linetype = 2,size=  1) +
-# #           geom_vline(xintercept = 0,linetype = 2,size = 1) +
-# #           guides(shape=guide_legend(title=NULL,color="black"),
-# #                  fill=guide_legend(title=NULL))+
-# #           theme_bw())
-# #
-# # dev.off()
-
 #
 # NMDS
 #
