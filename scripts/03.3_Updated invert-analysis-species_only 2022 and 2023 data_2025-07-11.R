@@ -1,7 +1,7 @@
 #
 # Title: ABMI Invertebrate Species Groups Analysis for 2022 and 2023 data
 # Created: February 5th, 2021
-# Last updated by Emily: November 3, 2025
+# Last updated by Emily: December 11, 2025
 # Author: Brandon Allen
 # Objective: Perform a series of analyses that match and expand on the Hanisch et al (2020) manuscript comparing the ABMI and CABIN protocols
 # Keywords: Notes, Initialization, Site information, Species level
@@ -419,30 +419,30 @@ for (x in 3:ncol(wilcox.data)) {
     }
 }
 
-for(spp.id in unique(site.abundance$Species)) {
-
-    temp.abundance <- site.abundance[site.abundance$Species == spp.id, ]
-    long.code <- taxa[taxa$Analysis_Name == spp.id, "long_code"]
-    temp.abundance$Species <- gsub(spp.id, long.code, temp.abundance$Species)
-
-    # Name change
-    temp.abundance$Protocol <- gsub("ABMI", "ABMI", temp.abundance$Protocol)
-    temp.abundance$Protocol <- gsub("CABIN", "CABIN", temp.abundance$Protocol)
-
-    png(filename = paste0("figures/invertebrate-protocol-analyses/species-abundance/", spp.id, "-", data.type, "-species-level_", Sys.Date(), ".png"),
-        width = 1200,
-        height = 1200,
-        res = 300)
-
-    print(ggplot(data = temp.abundance) +
-              geom_boxplot(mapping = aes(x = Species, y = Abundance, fill = Protocol), show.legend = TRUE) +
-              scale_fill_manual(values = abmi_pal("main")(2)) +
-              ggtitle(paste0("Wilcoxon = ", round(sign.results[sign.results$Species == spp.id, "Significance"], 3))) +
-              theme_bw())
-
-    dev.off()
-
-}
+# for(spp.id in unique(site.abundance$Species)) {
+# 
+#     temp.abundance <- site.abundance[site.abundance$Species == spp.id, ]
+#     long.code <- taxa[taxa$Analysis_Name == spp.id, "long_code"]
+#     temp.abundance$Species <- gsub(spp.id, long.code, temp.abundance$Species)
+# 
+#     # Name change
+#     temp.abundance$Protocol <- gsub("ABMI", "ABMI", temp.abundance$Protocol)
+#     temp.abundance$Protocol <- gsub("CABIN", "CABIN", temp.abundance$Protocol)
+# 
+#     png(filename = paste0("figures/invertebrate-protocol-analyses/species-abundance/", spp.id, "-", data.type, "-species-level_", Sys.Date(), ".png"),
+#         width = 1200,
+#         height = 1200,
+#         res = 300)
+# 
+#     print(ggplot(data = temp.abundance) +
+#               geom_boxplot(mapping = aes(x = Species, y = Abundance, fill = Protocol), show.legend = TRUE) +
+#               scale_fill_manual(values = abmi_pal("main")(2)) +
+#               ggtitle(paste0("Wilcoxon = ", round(sign.results[sign.results$Species == spp.id, "Significance"], 3))) +
+#               theme_bw())
+# 
+#     dev.off()
+# 
+# }
 
 
 # Species by site abundance
@@ -460,149 +460,58 @@ for(spp.id in unique(site.abundance$Species)) {
 #
 # }
 
-# Initialize output with consistent column names
-site.abundance <- data.frame(Protocol = character(),
-                             Species = character(),
-                             Abundance = numeric(),
-                             stringsAsFactors = FALSE)
 
-for (x in 5:ncol(data.in)) {
+#### Load NR region data to examine if NR drives trends in results ####
+NR.data <- read_rds("output/NR summary.rds") %>%
+  mutate(Site = paste0("W",Site)) #update sites to match wetland coding
 
-    temp.abundance <- data.frame(
-        Protocol = data.in$Protocol,
-        Species = rep(colnames(data.in)[x], nrow(data.in)),
-        Abundance = data.in[[x]]
-    )
+abmi.landcover <- NR.data %>%
+  inner_join(data.in %>% select(Site), by = "Site") %>% #select only sites in CABIN data
+  select(!SiteType)
 
-    site.abundance <- rbind(site.abundance, temp.abundance)
+##create a duplicate df for the CABIN protocol data
+cabin.landcover <- abmi.landcover %>%
+  mutate(Site = paste0("CABIN-",Site))
 
-    rm(temp.abundance)
-}
-#### this is also not working yet ####
+# join dfs
+landcover <- rbind(abmi.landcover, cabin.landcover)
+str(landcover)
 
-for(spp.id in unique(site.abundance$Species)) {
+## add to data
+data.in <- data.in %>%
+  left_join(landcover, by = "Site") %>%
+  select(
+    any_of(c("Site", "Year", "SiteYear", "Protocol", "NRNAME")),
+    sort(setdiff(names(.), c("Site", "Year", "SiteYear", "Protocol", "NRNAME")))
+  )
 
-    # Create dataset
-    site.cor <- data.frame(ABMI = site.abundance[site.abundance$Protocol == "ABMI" & site.abundance$Species == spp.id, "Abundance"],
-                           CABIN = site.abundance[site.abundance$Protocol == "CABIN" & site.abundance$Species == spp.id, "Abundance"])
+## isolate sites with NA values for NRNAME
+## note that these are duplicate sampling or B sites
+## I'll impute the NR from the base site
+landcover.NAs <- data.in %>%
+  filter(is.na(NRNAME)) %>% #select rows with NAs
+  select(Site) %>% #Not selecting NRNAME because I'll get that
+  #from an inner_join later on
+  mutate(base_site = Site %>%
+           str_remove("^CABIN-") %>% # remove prefix
+           str_remove("-D$")) %>% # remove suffix
+  mutate(base_site = base_site %>%
+           str_remove("B$")) %>% #remove suffix
+  inner_join(NR.data %>% select(Site, NRNAME),
+             by = c("base_site" = "Site")) %>% # get NR data
+  select(!base_site) #drop unnecessary column
 
-    abmi.test <- as.numeric(table(site.cor$ABMI > 0)["TRUE"]) > 10
-    if(is.na(abmi.test)) {abmi.test <- FALSE}
+## update data.in
+data.in <- data.in %>%
+  left_join(
+    landcover.NAs %>% select(Site, NRNAME_new = NRNAME),
+    by = "Site"
+  ) %>%
+  mutate(NRNAME = coalesce(NRNAME_new, NRNAME)) %>%
+  select(-NRNAME_new) %>%
+  rename(Natural_region = NRNAME)
+str(data.in)
 
-    cabin.test <- as.numeric(table(site.cor$CABIN > 0)["TRUE"]) > 10
-    if(is.na(cabin.test)) {cabin.test <- FALSE}
-
-    if(abmi.test == TRUE & cabin.test == TRUE) {
-
-        # Abundance Correlation
-
-        fig.1 <- ggplot(data = site.cor) +
-            geom_point(mapping = aes(x = ABMI, y = CABIN, color = "ABMI"), show.legend = FALSE) +
-            scale_color_manual(values = abmi_pal("main")(1)) +
-            geom_abline(intercept = 0, slope = 1) +
-            ggtitle(paste0(spp.id, "Correlation = ", round(cor(site.cor$ABMI, site.cor$CABIN), 2))) +
-            theme_bw()
-
-
-        # Standardize environment variables
-
-        site.information.scaled <- site.information
-
-        for (x in c(5:15)) {
-
-            site.information.scaled[, x] <- as.numeric(scale(site.information.scaled[, x]))
-
-        }
-
-        abmi.data <- cbind.data.frame(site.information.scaled, data.frame(Spp = data.in[, c(spp.id)]))
-        cabin.data <- abmi.data[abmi.data$Protocol == "CABIN", ]
-        abmi.data <- abmi.data[abmi.data$Protocol == "ABMI", ]
-
-        # Modeling
-
-        spp.model <- list()
-
-        abmi.data$Spp <- as.numeric(scale(log(abmi.data$Spp + 0.0001)))
-
-        spp.model[["ABMI"]] <- glm(Spp ~ Deep_Samples + Hab_Complex +
-                                       Temp_Mean + DO_Mean + Sal_Mean + pH_Mean + DP + DOC +
-                                       Max_Depth + Open_Water +
-                                       Human_Footprint, family = "gaussian", data = abmi.data)
-
-        cabin.data$Spp <- as.numeric(scale(log(cabin.data$Spp + 0.0001)))
-
-        spp.model[["CABIN"]] <- glm(Spp ~ Deep_Samples + Hab_Complex +
-                                        Temp_Mean + DO_Mean + Sal_Mean + pH_Mean + DP + DOC +
-                                        Max_Depth + Open_Water +
-                                        Human_Footprint, family = "gaussian", data = cabin.data)
-
-        # Store Coefficients
-
-        model.name <- names(spp.model)
-        coef.store <- NULL
-
-        for (x in 1:length(model.name)) {
-
-            temp.results <- summary(spp.model[[x]])$coefficients
-            temp.results <- data.frame(Protocol = rep(model.name[x], nrow(temp.results)),
-                                       Variable = rownames(temp.results),
-                                       Estimate = temp.results[, 1],
-                                       StdErr = temp.results[, 2],
-                                       Pvalue = temp.results[, 4])
-
-            coef.store <- rbind(coef.store, temp.results)
-
-            rm(temp.results)
-
-        }
-
-        coef.store <- coef.store[, c(1, 2, 3, 4, 5)]
-
-        # Coefficient visualization
-
-        coef.store <- coef.store[!(coef.store$Variable == "(Intercept)"), ]
-
-        # If StdErr is 10x greater than max/min remove
-        coef.store[max(abs(coef.store$Estimate))*10 < abs(coef.store$StdErr), c("Estimate", "StdErr")] <- NA
-
-        # Rename variables for legibility
-        coef.store$Variable <- as.character(coef.store$Variable)
-
-        # Sort factor order
-        coef.store["Coefficient"] <- factor(coef.store$Variable, levels = c("Deep_Samples", "Hab_Complex", "Temp_Mean", "DO_Mean", "Sal_Mean", "pH_Mean",
-                                                                            "DP", "DOC", "Max_Depth", "Open_Water", "Human_Footprint"))
-
-        coef.store["LowInner"] <- coef.store$Estimate - coef.store$StdErr
-        coef.store["HighInner"] <- coef.store$Estimate + coef.store$StdErr
-
-
-        fig.2 <- ggplot(coef.store, aes(colour = Protocol, shape = Protocol)) +
-            ggtitle(paste0("ABMI vs CABIN: ", spp.id)) +
-            xlab("Variables") +
-            ylab("Standardized Estimate") +
-            geom_hline(yintercept = 0, colour = gray(1/2), lty = 2) +
-            geom_linerange(aes(x = Coefficient, ymin = LowInner,  ymax = HighInner),lwd = 1, position = position_dodge(width = 1/2)) +
-            scale_color_manual(values = abmi_pal("main")(2)) +
-            geom_pointrange(aes(x = Coefficient, y = Estimate, ymin = LowInner,
-                                ymax = HighInner),
-                            lwd = 1/2, position = position_dodge(width = 1/2)) +
-            coord_flip() +
-            theme_bw() +
-            theme(axis.line = element_line(size = 0.5, linetype = "solid", colour = "black"),
-                  axis.text = element_text(size = rel(1), colour = "grey30"))
-
-        png(filename = paste0("figures/invertebrate-protocol-analyses/models/", spp.id, "-model-", data.type, "-species-level_", Sys.Date(), ".png"),
-            height = 2400,
-            width = 4800,
-            res = 300)
-
-        multiplot(fig.1, fig.2, cols = 2)
-
-        dev.off()
-
-    }
-
-}
 
 #
 # SIMPER
@@ -612,7 +521,7 @@ for(spp.id in unique(site.abundance$Species)) {
 # and converts the matrix into a brays-curtis dissimilarity. Columns in the community matrix (e.g., species, familes, etc)
 # are listed in order of highest to lowest contribution.
 
-simper.results <- simper(comm = data.in[, -c(1,2,3,4)], group = data.in$Protocol,
+simper.results <- simper(comm = data.in[, -c(1:5)], group = data.in$Protocol,
                          permutations = 1000,
                          trace = TRUE)
 
@@ -708,7 +617,7 @@ write.csv(summary(simper.results)$ABMI_CABIN,
 stress.values <- NULL
 for (axis.size in 1:10) {
 
-    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1,2,3,4)], distance = "bray",
+    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1:5)], distance = "bray",
                                               k = axis.size, try = 100, trymax = 500)$stress)
 
 }
@@ -733,7 +642,7 @@ print(ggplot(data = stress.values, aes(x = k, y = Stress, color = "#829EBC")) +
 dev.off()
 
 # Optimal value of K (3)
-nmds.results <- metaMDS(comm = data.in[, -c(1,2,3,4)], distance = "bray",
+nmds.results <- metaMDS(comm = data.in[, -c(1:5)], distance = "bray",
                         k = optimal.k, try = 100, trymax = 1000)
 
 # Lets assess the stress of the nmds using a shepard plot
@@ -753,6 +662,7 @@ dev.off()
 data.scores <- as.data.frame(scores(nmds.results, display = "sites"))  #Using the scores function from vegan to extract the site scores and convert to a data.frame
 data.scores$site <- rownames(data.in)  # create a column of site names, from the rownames of data.scores
 data.scores$Protocol <- data.in$Protocol #  add the protocol variable
+data.scores$Natural_region <- data.in$Natural_region #  add the NR variable
 
 # Store the ellipse information
 veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) {
@@ -802,23 +712,53 @@ png(filename = "figures/invertebrate-protocol-analyses/2022-and-2023-data/nmds-a
 print(ggplot() +
           #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Protocol, group = Protocol), alpha = 0.30) + # add the convex hulls
           #geom_text(data = species.scores, aes(x = NMDS1, y = NMDS2, label = species), alpha = 0.5) +  # add the species labels
-          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Protocol, colour = Protocol), size = 4) + # add the point markers
+          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Natural_region, colour = Protocol), size = 4) + # add the point markers
           geom_path(data = ellipse.df, aes(x = NMDS1, y = NMDS2, group = Protocol, colour = Protocol)) +
           scale_color_manual(values = abmi_pal("main")(2)) +
           scale_fill_manual(values = abmi_pal("main")(2)) +
-          ggtitle("2022 & 2023 data") +
+          labs(title = "2022 & 2023 data",
+               shape = "Natural region") +
           coord_equal() +
           theme_bw())
 
 dev.off()
 
-# Permanova
-perma.results <- adonis2(data.in[, -c(1,2,3,4)] ~ data.in$Protocol, data = site.information, method = "bray", permutations = 999)
+## update site.information for analyses
+site.information <- site.information %>%
+  filter(SiteYear %in% data.in$SiteYear) %>%
+  distinct(SiteYear, .keep_all = TRUE) %>%
+  full_join(data.in %>% select(Site, Natural_region, Protocol), by = "Site") #add natural region data
+str(site.information)
+
+## set rownames
+rownames(data.in) <- data.in$Site
+rownames(site.information) <- site.information$Site
+
+#reorder rows to match
+site.information <- site.information[rownames(data.in), ]
+
+# Permanova for protocol
+perma.results <- adonis2(data.in[, -c(1:5)] ~ data.in$Protocol, data = site.information, method = "bray", permutations = 999)
 write.csv(perma.results, file = paste0("tables/permanova-protocol-analysis-", data.type, "-2022-and-2023-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
 rm(perma.results)
 
+# Permanova for NR
+## add NR to site.information
+## run the test
+perma.results <- adonis2(data.in[, -c(1:5)] ~ Protocol*Natural_region, data = site.information, method = "bray", permutations = 999)
+write.csv(perma.results, file = paste0("tables/permanova-natural-region-analysis-", data.type, "-2022-and-2023-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
+rm(perma.results)
+
+## post-hoc tests
+pairwise.adonis2(
+  dist_matrix ~ group,
+  data = metadata,
+  perm = 999,
+  p.adjust.m = "BH"
+)
+
 # Analysis of dispersion (permadis analysis) Which one is more dispersed
-beta.results <- betadisper(d = vegdist(x = data.in[, -c(1,2,3,4)], method = "bray"), group = data.in$Protocol)
+beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:5)], method = "bray"), group = data.in$Protocol)
 anova(beta.results)
 write.csv(anova(beta.results), file = paste0("tables/permadisp-analysis-", data.type, "-2022-and-2023-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
 
@@ -872,458 +812,3 @@ print(ggplot() +
           theme_bw())
 
 dev.off()
-
-#
-#### Shallow vs. Deep - can't complete right now ####
-#
-
-# # store the site level information
-# data.scores <- as.data.frame(scores(nmds.results))  #Using the scores function from vegan to extract the site scores and convert to a data.frame
-# data.scores$site <- rownames(data.scores)  # create a column of site names, from the rownames of data.scores
-# data.scores$Group <- paste(data.in$Protocol, ifelse(site.information$Deep_Samples < 4, "Shallow",
-#                                                      ifelse(site.information$Deep_Samples < 6, "Medium", "Deep")), sep = "_") #  add the protocol variable
-#
-# # Store the ellipse information
-# veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) {
-#
-#     theta <- (0:npoints) * 2 * pi/npoints
-#     Circle <- cbind(cos(theta), sin(theta))
-#     t(center + scale * t(Circle %*% chol(cov)))
-#
-# }
-#
-#
-# plot.new()
-# ordiplot(nmds.results)
-# ord <- ordiellipse(nmds.results, as.factor(data.scores$Group), display = "sites", kind ="sd", conf = 0.9, label = FALSE)
-# dev.off()
-#
-# # Remove CABIN_Deep
-# data.scores <- data.scores[data.scores$Group != "CABIN_Deep", ]
-#
-# #Generate ellipse points
-# ellipse.df <- data.frame()
-# for(g in unique(data.scores$Group)){
-#     if(g!="" && (g %in% names(ord))){
-#
-#         ellipse.df <- rbind(ellipse.df, cbind(as.data.frame(with(data.scores[data.scores$Group==g,],
-#                                                                  veganCovEllipse(ord[[g]]$cov,ord[[g]]$center,ord[[g]]$scale)))
-#                                               ,Group=g))
-#     }
-# }
-#
-#
-# # Store the hull information
-# grp.a <- data.scores[data.scores$Group == "ABMI_Deep", ][chull(data.scores[data.scores$Group ==
-#                                                                              "ABMI_Deep", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI_Deep
-# grp.b <- data.scores[data.scores$Group == "ABMI_Medium", ][chull(data.scores[data.scores$Group ==
-#                                                                               "ABMI_Medium", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI_Medium
-# grp.c <- data.scores[data.scores$Group == "ABMI_Shallow", ][chull(data.scores[data.scores$Group ==
-#                                                                            "ABMI_Shallow", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI_Shallow
-# grp.d <- data.scores[data.scores$Group == "CABIN_Shallow", ][chull(data.scores[data.scores$Group ==
-#                                                                            "CABIN_Shallow", c("NMDS1", "NMDS2")]), ]  # hull values for CABIN_Shallow
-#
-# hull.data <- rbind(grp.a, grp.b, grp.c, grp.d)  # combine the hull data
-#
-# png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/nmds-", data.type, "-species-level-shallow-vs-deep_", Sys.Date(), ".png"),
-#     width = 2400,
-#     height = 2400,
-#     res = 300)
-#
-# # Looks like there is a lot of overlap between the two protocols
-# print(ggplot() +
-#           #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Group, group = Group), alpha = 0.30) + # add the convex hulls
-#           geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Group, colour = Group), size = 4) +
-#           geom_path(data = ellipse.df, aes(x = NMDS1, y = NMDS2, group = Group, colour = Group)) + # add the point markers# add the point markers
-#           scale_color_manual(values = abmi_pal("main")(4)) +
-#           scale_fill_manual(values = abmi_pal("main")(4)) +
-#           coord_equal() +
-#           theme_bw())
-#
-# dev.off()
-
-# PERMANOVA
-# Organize data
-perm.site <- site.information
-perm.site$Group <- paste(perm.site$Protocol, ifelse(perm.site$Deep_Samples < 4, "Shallow",
-                                                    ifelse(perm.site$Deep_Samples < 6, "Medium", "Deep")), sep = "_")
-# Remove CABIN_Deep
-perm.site <- perm.site[perm.site$Group != "CABIN_Deep", ]
-perm.species <- data.in[rownames(perm.site), ]
-
-perma.results <- adonis2(perm.species[, -c(1,2,3,4)] ~ Group, data = perm.site, method = "bray", permutations = 999)
-write.csv(perma.results, file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permanova-depth-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
-rm(perma.results)
-
-# #
-# # Group bootstrap
-# #
-#
-# # Optimal value of K (3)
-# nmds.results <- metaMDS(comm = data.in[, -c(1,2,3)], distance = "bray",
-#                         k = optimal.k, try = 100, trymax = 1000)
-#
-# nmds.boot <- NULL
-#
-# abmi.boot <- data.in[data.in$Protocol == "ABMI", ]
-# cabin.boot <- data.in[data.in$Protocol == "CABIN", ]
-#
-# for (boot.iter in 1:100) {
-#
-#     boot.comm <- rbind(abmi.boot[sample(1:nrow(abmi.boot), nrow(abmi.boot), TRUE), ],
-#                        cabin.boot[sample(1:nrow(cabin.boot), nrow(cabin.boot), TRUE), ])
-#     nmds.results <- metaMDS(comm = boot.comm[, -c(1,2,3)], distance = "bray",
-#                             k = optimal.k, try = 100, trymax = 1000)
-#     nmds.results <- as.data.frame(scores(nmds.results))
-#
-#
-# }
-
-######################
-# Relative Abundance #
-######################
-
-data.type <- "relative-abundance"
-data.in <- decostand(adj.count[,5:262], method = "total") #convert to relative abundance
-data.in <- cbind(adj.count[, 1:4], data.in)
-sum(is.na(data.in))
-str(data.in)
-
-# Align the species data with the site data
-rownames(data.in) <- paste(data.in$Site, data.in$Protocol, sep = "_")
-#data.in <- data.in[rownames(site.information), ] # Match site order
-
-##format site information df to match data.in
-site.information <- site.information %>%
-    filter(SiteYear %in% data.in$SiteYear) %>%
-    mutate(Protocol = if_else(startsWith(Site, "CABIN"), "CABIN", "ABMI"), .after = 3)
-str(site.information)
-
-#
-# SIMPER
-#
-
-# The SIMPER function takes a community matrix (data.in[, -c(1,2)]) and a grouping factor (Protocol)
-# and converts the matrix into a brays-curtis dissimilarity. Columns in the community matrix (e.g., species, familes, etc)
-# are listed in order of highest to lowest contribution.
-
-simper.results <- simper(comm = data.in[, -c(1:4)], group = data.in$Protocol,
-                         permutations = 1000,
-                         trace = TRUE)
-
-# Summary table of results for all columns in the community matrix.
-# ChiroUA, OligoUA, AmphiUA, ChaobUA, GastrUA, and EphemUA are the top group
-summary(simper.results)
-write.csv(summary(simper.results)$ABMI_CABIN,
-          file = paste0("output/2022 and 2023 data/simper-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE)
-
-
-# #
-# # RDA analyses
-# #
-#
-# # The RDA analysis will help us assess which environmental covariates are associated with the communities collected
-# # using both the ABMI and CABIN methods.
-# # Consider transformations to the count based on the type of data.
-# # Look into adding a conditioning call so we can pull out the protocol effect # Feb 24th, 2021 Note Look into this more.
-#
-# rda.results <- rda(X = data.in[, -c(1,2)], Y = site.information[, -c(1:2)], z = site.information$Protocol, scale = TRUE)
-# rda.results <- summary(rda.results)
-#
-# # Visualize
-# species.coord <- data.frame(RDA1 = rda.results$species[, 1],
-#                             RDA2 = rda.results$species[, 2])
-#
-# species.subset.coord <- species.coord[rownames(summary(simper.results)$ABMI_CABIN)[1:5], ]# When adding labels, we are only adding the most import species identified in the SIMPER analysis. Figure gets muddied with too many labeles.
-#
-# site.coord <- data.frame(RDA1 = rda.results$sites[, 1],
-#                          RDA2 = rda.results$sites[, 2],
-#                          Protocol = site.information$Protocol)
-#
-# biplot.coord <- data.frame(RDA1 = rda.results$biplot[, 1],
-#                            RDA2 = rda.results$biplot[, 2])
-#
-# png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/rda-", data.type, "-species-level_", Sys.Date(), ".png"),
-#     width = 2400,
-#     height = 2400,
-#     res = 300)
-#
-# print(ggplot() +
-#           geom_point(data = site.coord, aes(x = RDA1, y = RDA2, color = Protocol), size = 3) +
-#           scale_color_manual(values = abmi_pal("main")(2)) +
-#           geom_segment(data = species.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-#                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-#                                      type = "closed"),linetype = 1, size = 0.6, colour = "#E8A396") +
-#           geom_text(data = species.subset.coord, aes(x = RDA1, y = RDA2, label = row.names(species.subset.coord))) +
-#           geom_segment(data = biplot.coord, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
-#                        arrow = arrow(angle = 22.5,length = unit(0.35,"cm"),
-#                                      type = "closed"),linetype = 1, size = 0.6,colour = "#829EBC") +
-#           geom_text(data = biplot.coord, aes(x = RDA1, y = RDA2, label = row.names(biplot.coord))) +
-#           labs(x = paste0("RDA 1 (", format(100 *rda.results$cont[[1]][2,1], digits=4), "%)"),
-#                y = paste0("RDA 2 (", format(100 *rda.results$cont[[1]][2,2], digits=4), "%)")) +
-#           geom_hline(yintercept = 0, linetype = 2,size=  1) +
-#           geom_vline(xintercept = 0,linetype = 2,size = 1) +
-#           guides(shape=guide_legend(title=NULL,color="black"),
-#                  fill=guide_legend(title=NULL))+
-#           theme_bw())
-#
-# dev.off()
-
-#
-# NMDS
-#
-
-# The metaMDS function takes a community matrix, transforms it based on the defined distance (brays-curtis), and a defined
-# number axes to reduce the dimentionality. We are trying to simplify the data, so we don't want too many axes (e.g., greater than 3)
-# but we don't want there to be high stress (poor ability to simplify the data (greater than 0.2 is poor). The try options are defining how many
-# iterations the function should run for. Higher values take longer to run, but will result in more stable results between runs.
-
-stress.values <- numeric(0)  # ensures it's a clean numeric vector
-for (axis.size in 1:10) {
-
-    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1:4)], distance = "bray",
-                                              k = axis.size, try = 100, trymax = 500)$stress)
-
-}
-
-stress.values <- data.frame(k = 1:10, Stress = stress.values)
-
-# Create stress plot and identify smallest index with value less than 0.2
-ggplot(data = stress.values, aes(x = k, y = Stress, color = "#829EBC")) +
-    geom_point(show.legend = FALSE) +
-    geom_hline(yintercept = 0.2) +
-    theme_bw()
-
-optimal.k <- as.numeric(table(stress.values$Stress < 0.2)["FALSE"]) + 1
-
-# Optimal value of K (3)
-nmds.results <- metaMDS(comm = data.in[, -c(1:4)], distance = "bray",
-                        k = optimal.k, try = 100, trymax = 1000)
-
-# Lets assess the stress of the nmds using a shepard plot
-# It looks like there is some scatter between the ordination and dissimilarity distances, but it isn't too bad.
-stressplot(nmds.results)
-
-# Lets visualize the first two axes of the nmds
-
-# store the site level information
-data.scores <- as.data.frame(scores(nmds.results, display = "sites"))
-data.scores$site <- rownames(data.scores)  # create a column of site names, from the rownames of data.scores
-data.scores$Protocol <- data.in$Protocol #  add the protocol variable
-
-# Name change
-data.scores$Protocol <- gsub("ABMI", "ABMI", data.scores$Protocol)
-data.scores$Protocol <- gsub("CABIN", "CABIN", data.scores$Protocol)
-
-# Name change
-data.in$Protocol <- gsub("ABMI", "ABMI", data.in$Protocol)
-data.in$Protocol <- gsub("CABIN", "CABIN", data.in$Protocol)
-
-# Store the ellipse information
-veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) {
-
-    theta <- (0:npoints) * 2 * pi/npoints
-    Circle <- cbind(cos(theta), sin(theta))
-    t(center + scale * t(Circle %*% chol(cov)))
-
-}
-
-plot.new()
-ordiplot(nmds.results)
-ord <- ordiellipse(nmds.results, as.factor(data.in$Protocol), display = "sites", kind ="sd", conf = 0.9, label = FALSE)
-dev.off()
-
-#Generate ellipse points
-ellipse.df <- data.frame()
-for(g in unique(data.scores$Protocol)){
-    if(g!="" && (g %in% names(ord))){
-
-        ellipse.df <- rbind(ellipse.df, cbind(as.data.frame(with(data.scores[data.scores$Protocol==g,],
-                                                                 veganCovEllipse(ord[[g]]$cov,ord[[g]]$center,ord[[g]]$scale)))
-                                              ,Protocol=g))
-    }
-}
-
-# Name change
-ellipse.df$Protocol <- gsub("ABMI", "ABMI", ellipse.df$Protocol)
-ellipse.df$Protocol <- gsub("CABIN", "CABIN", ellipse.df$Protocol)
-
-# Store the hull information
-grp.a <- data.scores[data.scores$Protocol == "ABMI", ][chull(data.scores[data.scores$Protocol ==
-                                                                             "ABMI", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI
-grp.b <- data.scores[data.scores$Protocol == "CABIN", ][chull(data.scores[data.scores$Protocol ==
-                                                                              "CABIN", c("NMDS1", "NMDS2")]), ]  # hull values for CABIN
-# Name change
-grp.a$Protocol <- gsub("ABMI", "ABMI", grp.a$Protocol)
-grp.b$Protocol <- gsub("CABIN", "CABIN", grp.b$Protocol)
-
-hull.data <- rbind(grp.a, grp.b)  # combine the hull data
-
-# Store the species level information
-species.scores <- as.data.frame(scores(nmds.results, "species"))  #Using the scores function from vegan to extract the species scores and convert to a data.frame
-species.scores$species <- rownames(species.scores)  # create a column of species, from the rownames of species.scores
-head(species.scores)  # look at the data
-species.scores <- species.scores[rownames(summary(simper.results)$ABMI_CABIN)[1:10], ]
-
-png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/nmds-", data.type, "-species-level_", Sys.Date(), ".png"),
-    width = 2400,
-    height = 2400,
-    res = 300)
-
-# Looks like there is a lot of overlap between the two protocols
-print(ggplot() +
-          #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Protocol, group = Protocol), alpha = 0.30) + # add the convex hulls
-          geom_text(data = species.scores, aes(x = NMDS1, y = NMDS2, label = species), alpha = 0.5) +  # add the species labels
-          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Protocol, colour = Protocol), size = 4) + # add the point markers
-          geom_path(data = ellipse.df, aes(x = NMDS1, y = NMDS2, group = Protocol, colour = Protocol)) +
-          scale_color_manual(values = abmi_pal("main")(2)) +
-          scale_fill_manual(values = abmi_pal("main")(2)) +
-          coord_equal() +
-          theme_bw())
-
-dev.off()
-
-## fix up site information
-site.information <- site.information %>%
-    mutate(Protocol = if_else(str_starts(Site, "CABIN"),"CABIN", "ABMI")) %>%
-    filter(SiteYear %in% data.in$SiteYear) %>%
-    distinct(SiteYear, .keep_all = TRUE)
-str(site.information)
-# Permanova
-perma.results <- adonis2(data.in[, -c(1:4)] ~ Protocol, data = site.information, method = "bray", permutations = 999)
-write.csv(perma.results, file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permanova-protocol-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
-rm(perma.results)
-
-# Analysis of dispersion (permadis analysis) Which one is more dispersed
-beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:4)], method = "bray"), group = data.in$Protocol)
-anova(beta.results) # No difference in their dispersion
-write.csv(anova(beta.results), file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permadisp-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
-
-
-#
-# Procrustes test
-#
-
-# The procrustes test assesses the configuration of two matrices to maximize similarity
-# I believe you can use the original matrix, but it is more informative to test on the ordination results (NMDS)
-# We can take the ordination scores from the data.scores object created in the previous step
-
-pt.visual <- procrustes(Y = data.scores[data.scores$Protocol == "ABMI", 1:2],
-                        X = data.scores[data.scores$Protocol == "CABIN", 1:2], symmetric = TRUE)
-pt.test <- protest(Y = data.scores[data.scores$Protocol == "ABMI", 1:2],
-                   X = data.scores[data.scores$Protocol == "CABIN", 1:2], symmetric = TRUE)
-
-# # Distance between the two plots
-residuals(pt.test)
-plot(residuals(pt.test))
-# lm(residuals(pt.test) ~ covariates)# FIX Use only the measures that are consistent between protocols # NEED TO UPDATE
-
-write.csv(data.frame(SS = pt.test$ss,
-                     Correlation = pt.test$scale,
-                     Significance = pt.test$signif), file = paste0("output/2022 and 2023 data/", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = FALSE) # No difference in their dispersion
-
-# Change plot
-
-before.data <- data.frame(pt.visual$X)
-colnames(before.data) <- colnames(pt.visual$X)
-after.data <- data.frame(pt.visual$Yrot)
-colnames(after.data) <- colnames(pt.visual$X)
-
-png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/procrustes-", data.type, "-species-level_", Sys.Date(), ".png"),
-    width = 2400,
-    height = 2400,
-    res = 300)
-
-print(ggplot() +
-          geom_point(data = after.data, aes(x = NMDS1, y = NMDS2, color = "ABMI"), size = 3, show.legend = FALSE) + # add the point markers
-          geom_segment(aes(x = after.data$NMDS1, y = after.data$NMDS2, xend = before.data$NMDS1, yend = before.data$NMDS2), color = abmi_pal("main")(2)[2], size = 0.5, lty = 1, arrow = arrow(length=unit(0.30,"cm"), type = "closed"), show.legend = FALSE) + # add the point markers
-          scale_color_manual(values = abmi_pal("main")(1)) +
-          geom_hline(yintercept = 0) +
-          geom_vline(xintercept = 0) +
-          xlab("Axis 1") +
-          ylab("Axis 2") +
-          coord_equal() +
-          theme_bw())
-
-dev.off()
-
-#
-# Shallow vs. Deep
-#
-
-# store the site level information
-data.scores <- as.data.frame(scores(nmds.results))  #Using the scores function from vegan to extract the site scores and convert to a data.frame
-data.scores$site <- rownames(data.scores)  # create a column of site names, from the rownames of data.scores
-data.scores$Group <- paste(data.in$Protocol, ifelse(site.information$Deep_Samples < 4, "Shallow",
-                                                    ifelse(site.information$Deep_Samples < 6, "Medium", "Deep")), sep = "_") #  add the protocol variable
-
-# Store the ellipse information
-veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) {
-
-    theta <- (0:npoints) * 2 * pi/npoints
-    Circle <- cbind(cos(theta), sin(theta))
-    t(center + scale * t(Circle %*% chol(cov)))
-
-}
-
-plot.new()
-ordiplot(nmds.results)
-ord <- ordiellipse(nmds.results, as.factor(data.scores$Group), display = "sites", kind ="sd", conf = 0.9, label = FALSE)
-dev.off()
-
-# Remove CABIN_Deep
-data.scores <- data.scores[data.scores$Group != "TSA_Deep", ]
-
-#Generate ellipse points
-ellipse.df <- data.frame()
-for(g in unique(data.scores$Group)){
-    if(g!="" && (g %in% names(ord))){
-
-        ellipse.df <- rbind(ellipse.df, cbind(as.data.frame(with(data.scores[data.scores$Group==g,],
-                                                                 veganCovEllipse(ord[[g]]$cov,ord[[g]]$center,ord[[g]]$scale)))
-                                              ,Group=g))
-    }
-}
-
-
-# Store the hull information
-grp.a <- data.scores[data.scores$Group == "CTA_Deep", ][chull(data.scores[data.scores$Group ==
-                                                                              "CTA_Deep", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI_Deep
-grp.b <- data.scores[data.scores$Group == "CTA_Medium", ][chull(data.scores[data.scores$Group ==
-                                                                                "CTA_Medium", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI_Medium
-grp.c <- data.scores[data.scores$Group == "CTA_Shallow", ][chull(data.scores[data.scores$Group ==
-                                                                                 "CTA_Shallow", c("NMDS1", "NMDS2")]), ]  # hull values for ABMI_Shallow
-grp.d <- data.scores[data.scores$Group == "TSA_Shallow", ][chull(data.scores[data.scores$Group ==
-                                                                                 "TSA_Shallow", c("NMDS1", "NMDS2")]), ]  # hull values for CABIN_Shallow
-
-hull.data <- rbind(grp.a, grp.b, grp.c, grp.d)  # combine the hull data
-
-png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/nmds-", data.type, "-species-level-shallow-vs-deep_", Sys.Date(), ".png"),
-    width = 2400,
-    height = 2400,
-    res = 300)
-
-# Looks like there is a lot of overlap between the two protocols
-print(ggplot() +
-          #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Group, group = Group), alpha = 0.30) + # add the convex hulls
-          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Group, colour = Group), size = 4) + # add the point markers
-          geom_path(data = ellipse.df, aes(x = NMDS1, y = NMDS2, group = Group, colour = Group)) + # add the point markers# add the point markers
-          scale_color_manual(values = abmi_pal("main")(4)) +
-          scale_fill_manual(values = abmi_pal("main")(4)) +
-          coord_equal() +
-          theme_bw())
-
-dev.off()
-
-# PERMANOVA
-# Organize data
-perm.site <- site.information
-perm.site$Group <- paste(perm.site$Protocol, ifelse(perm.site$Deep_Samples < 4, "Shallow",
-                                                    ifelse(perm.site$Deep_Samples < 6, "Medium", "Deep")), sep = "_")
-# Remove CABIN_Deep
-perm.site <- perm.site[perm.site$Group != "CABIN_Deep", ]
-perm.species <- data.in[rownames(perm.site), ]
-
-perma.results <- adonis2(perm.species[, -c(1,2)] ~ Group, data = perm.site, method = "bray", permutations = 999)
-write.csv(perma.results, file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permanova-depth-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
-rm(perma.results)

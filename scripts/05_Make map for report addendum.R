@@ -1,7 +1,7 @@
 #
 # Title: Make map for aquatic invertebrate addendum report
 # Created: November 10, 2025
-# Last Updated by Emily: November 10, 2025
+# Last Updated by Emily: December 8, 2025
 # Authors: Emily Holden
 # Objective: recreate a map from the initial report showing the sites sampled in this work
 # and their distribution.
@@ -142,11 +142,15 @@ ggsave( filename = "output/sampling map.jpeg",
         quality = 100)
 
 #### create table tallying sites in each NR ####
-NR.summary.table <- occ.template %>%
+NR.summary <- occ.template %>%
     st_as_sf(coords = c("Longitude", "Latitude"), crs = st_crs(province.shapefile)) %>%  # convert sites to sf
     st_join(province.shapefile %>% select(NRNAME)) %>%                                   # spatial join to NR polygons
     st_drop_geometry() %>%                                                               # remove geometry for table operations
-    filter(!is.na(NRNAME)) %>%                                                           # remove sites outside polygons
-    group_by(NRNAME, SiteType) %>%                                                       # group by NR and SiteType
+    filter(!is.na(NRNAME))                                                          # remove sites outside polygons
+##export the NR summary
+write_rds(NR.summary, "output/NR summary.rds")
+
+NR.summary.table <- NR.summary %>%
+  group_by(NRNAME, SiteType) %>%                                                       # group by NR and SiteType
     summarise(SiteCount = n(), .groups = "drop")                                         # count sites
 print(NR.summary.table)
