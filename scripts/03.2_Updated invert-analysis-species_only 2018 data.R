@@ -1,7 +1,7 @@
 #
 # Title: ABMI Invertebrate Species Groups Analysis for 2018 data
 # Created: February 5th, 2021
-# Last Updated Emily: November 3, 2025
+# Last Updated Emily: December 11, 2025
 # Author: Brandon Allen
 # Objective: Perform a series of analyses that match and expand on the Hanisch et al (2020) manuscript comparing the ABMI and CABIN protocols
 # Keywords: Notes, Initialization, Site information, Species level
@@ -353,49 +353,102 @@ for (x in 3:ncol(wilcox.data)) {
     }
 }
 
-for(spp.id in unique(site.abundance$Species)) {
+# for(spp.id in unique(site.abundance$Species)) {
+# 
+#     temp.abundance <- site.abundance[site.abundance$Species == spp.id, ]
+#     long.code <- taxa[taxa$Analysis_Name == spp.id, "long_code"]
+#     temp.abundance$Species <- gsub(spp.id, long.code, temp.abundance$Species)
+# 
+#     # Name change
+#     temp.abundance$Protocol <- gsub("ABMI", "ABMI", temp.abundance$Protocol)
+#     temp.abundance$Protocol <- gsub("CABIN", "CABIN", temp.abundance$Protocol)
+# 
+#     png(filename = paste0("figures/invertebrate-protocol-analyses/species-abundance/", spp.id, "-", data.type, "-species-level_", Sys.Date(), ".png"),
+#         width = 1200,
+#         height = 1200,
+#         res = 300)
+# 
+#     print(ggplot(data = temp.abundance) +
+#               geom_boxplot(mapping = aes(x = Species, y = Abundance, fill = Protocol), show.legend = TRUE) +
+#               scale_fill_manual(values = abmi_pal("main")(2)) +
+#               ggtitle(paste0("Wilcoxon = ", round(sign.results[sign.results$Species == spp.id, "Significance"], 3))) +
+#               theme_bw())
+# 
+#     dev.off()
+# 
+# }
+# 
+# # Initialize output with consistent column names
+# site.abundance <- data.frame(Protocol = character(),
+#                              Species = character(),
+#                              Abundance = numeric(),
+#                              stringsAsFactors = FALSE)
+# 
+# for (x in 5:ncol(data.in)) {
+# 
+#     temp.abundance <- data.frame(
+#         Protocol = data.in$Protocol,
+#         Species = rep(colnames(data.in)[x], nrow(data.in)),
+#         Abundance = data.in[[x]]
+#     )
+# 
+#     site.abundance <- rbind(site.abundance, temp.abundance)
+# 
+#     rm(temp.abundance)
+# }
 
-    temp.abundance <- site.abundance[site.abundance$Species == spp.id, ]
-    long.code <- taxa[taxa$Analysis_Name == spp.id, "long_code"]
-    temp.abundance$Species <- gsub(spp.id, long.code, temp.abundance$Species)
 
-    # Name change
-    temp.abundance$Protocol <- gsub("ABMI", "ABMI", temp.abundance$Protocol)
-    temp.abundance$Protocol <- gsub("CABIN", "CABIN", temp.abundance$Protocol)
+#### Load NR region data to examine if NR drives trends in results ####
+NR.data <- read_rds("output/NR summary.rds") %>%
+  mutate(Site = paste0("W",Site)) #update sites to match wetland coding
 
-    png(filename = paste0("figures/invertebrate-protocol-analyses/species-abundance/", spp.id, "-", data.type, "-species-level_", Sys.Date(), ".png"),
-        width = 1200,
-        height = 1200,
-        res = 300)
+abmi.landcover <- NR.data %>%
+  inner_join(data.in %>% select(Site), by = "Site") %>% #select only sites in CABIN data
+  select(!SiteType)
 
-    print(ggplot(data = temp.abundance) +
-              geom_boxplot(mapping = aes(x = Species, y = Abundance, fill = Protocol), show.legend = TRUE) +
-              scale_fill_manual(values = abmi_pal("main")(2)) +
-              ggtitle(paste0("Wilcoxon = ", round(sign.results[sign.results$Species == spp.id, "Significance"], 3))) +
-              theme_bw())
+##create a duplicate df for the CABIN protocol data
+cabin.landcover <- abmi.landcover %>%
+  mutate(Site = paste0("CABIN-",Site))
 
-    dev.off()
+# join dfs
+landcover <- rbind(abmi.landcover, cabin.landcover)
+str(landcover)
 
-}
+## add to data
+data.in <- data.in %>%
+  left_join(landcover, by = "Site") %>%
+  select(
+    any_of(c("Site", "Year", "SiteYear", "Protocol", "NRNAME")),
+    sort(setdiff(names(.), c("Site", "Year", "SiteYear", "Protocol", "NRNAME")))
+  )
 
-# Initialize output with consistent column names
-site.abundance <- data.frame(Protocol = character(),
-                             Species = character(),
-                             Abundance = numeric(),
-                             stringsAsFactors = FALSE)
+## isolate sites with NA values for NRNAME
+## note that these are duplicate sampling or B sites
+## I'll impute the NR from the base site
+landcover.NAs <- data.in %>%
+  filter(is.na(NRNAME)) %>% #select rows with NAs
+  select(Site) %>% #Not selecting NRNAME because I'll get that
+  #from an inner_join later on
+  mutate(base_site = Site %>%
+           str_remove("^CABIN-") %>% # remove prefix
+           str_remove("-D$")) %>% # remove suffix
+  mutate(base_site = base_site %>%
+           str_remove("B$")) %>% #remove suffix
+  inner_join(NR.data %>% select(Site, NRNAME),
+             by = c("base_site" = "Site")) %>% # get NR data
+  select(!base_site) #drop unnecessary column
 
-for (x in 5:ncol(data.in)) {
+## update data.in
+data.in <- data.in %>%
+  left_join(
+    landcover.NAs %>% select(Site, NRNAME_new = NRNAME),
+    by = "Site"
+  ) %>%
+  mutate(NRNAME = coalesce(NRNAME_new, NRNAME)) %>%
+  select(-NRNAME_new) %>%
+  rename(Natural_region = NRNAME)
+str(data.in)
 
-    temp.abundance <- data.frame(
-        Protocol = data.in$Protocol,
-        Species = rep(colnames(data.in)[x], nrow(data.in)),
-        Abundance = data.in[[x]]
-    )
-
-    site.abundance <- rbind(site.abundance, temp.abundance)
-
-    rm(temp.abundance)
-}
 #
 # SIMPER
 #
@@ -404,14 +457,14 @@ for (x in 5:ncol(data.in)) {
 # and converts the matrix into a brays-curtis dissimilarity. Columns in the community matrix (e.g., species, familes, etc)
 # are listed in order of highest to lowest contribution.
 
-simper.results <- simper(comm = data.in[, -c(1,2,3,4)], group = data.in$Protocol,
+simper.results <- simper(comm = data.in[, -c(1:5)], group = data.in$Protocol,
                          permutations = 1000,
                          trace = TRUE)
 
 # Summary table of results for all columns in the community matrix.
 # ChiroUA, OligoUA, AmphiUA, ChaobUA, GastrUA, and EphemUA are the top group
 write.csv(summary(simper.results)$ABMI_CABIN,
-          file = paste0("output/simper-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE)
+          file = paste0("output/2018-simper-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE)
 
 #
 # NMDS
@@ -425,7 +478,7 @@ write.csv(summary(simper.results)$ABMI_CABIN,
 stress.values <- NULL
 for (axis.size in 1:10) {
 
-    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1,2,3,4)], distance = "bray",
+    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1:5)], distance = "bray",
                                               k = axis.size, try = 100, trymax = 500)$stress)
 
 }
@@ -449,7 +502,7 @@ print(ggplot(data = stress.values, aes(x = k, y = Stress, color = "#829EBC")) +
 dev.off()
 
 # Optimal value of K (3)
-nmds.results <- metaMDS(comm = data.in[, -c(1,2,3,4)], distance = "bray",
+nmds.results <- metaMDS(comm = data.in[, -c(1:5)], distance = "bray",
                         k = optimal.k, try = 100, trymax = 1000)
 
 # Lets assess the stress of the nmds using a shepard plot
@@ -469,6 +522,7 @@ dev.off()
 data.scores <- as.data.frame(scores(nmds.results, display = "sites"))  #Using the scores function from vegan to extract the site scores and convert to a data.frame
 data.scores$site <- rownames(data.in)  # create a column of site names, from the rownames of data.scores
 data.scores$Protocol <- data.in$Protocol #  add the protocol variable
+data.scores$Natural_region <- data.in$Natural_region #  add the protocol variable
 
 # Store the ellipse information
 veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) {
@@ -518,23 +572,44 @@ png(filename = paste0("figures/invertebrate-protocol-analyses/2018 species/nmds-
 print(ggplot() +
           #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Protocol, group = Protocol), alpha = 0.30) + # add the convex hulls
           geom_text(data = species.scores, aes(x = NMDS1, y = NMDS2, label = species), alpha = 0.5) +  # add the species labels
-          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Protocol, colour = Protocol), size = 4) + # add the point markers
+          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Natural_region, colour = Protocol), size = 4) + # add the point markers
           geom_path(data = ellipse.df, aes(x = NMDS1, y = NMDS2, group = Protocol, colour = Protocol)) +
           scale_color_manual(values = abmi_pal("main")(2)) +
           scale_fill_manual(values = abmi_pal("main")(2)) +
-          labs(title = "2018 data") +
+          labs(title = "2018 data",
+               shape = "Natural region") +
           coord_equal() +
           theme_bw())
 
 dev.off()
 
-# Permanova
-perma.results <- adonis2(data.in[, -c(1,2,3,4)] ~ data.in$Protocol, data = site.information, method = "bray", permutations = 999)
-write.csv(perma.results, file = "output/2018 data only/permanova results.csv", row.names = TRUE) # No difference in their dispersion
+## update site.information for analyses
+site.information <- site.information %>%
+  filter(SiteYear %in% data.in$SiteYear) %>%
+  distinct(SiteYear, .keep_all = TRUE) %>%
+  full_join(data.in %>% select(Site, Natural_region, Protocol), by = "Site") #add natural region data
+str(site.information)
+
+## set rownames
+rownames(data.in) <- data.in$Site
+rownames(site.information) <- site.information$Site
+
+#reorder rows to match
+site.information <- site.information[rownames(data.in), ]
+
+# Permanova for protocol
+perma.results <- adonis2(data.in[, -c(1:5)] ~ data.in$Protocol, data = site.information, method = "bray", permutations = 999)
+write.csv(perma.results, file = "output/2018 data only/Protocol permanova results.csv", row.names = TRUE) # No difference in their dispersion
+rm(perma.results)
+
+# Permanova for NR
+## run the test
+perma.results <- adonis2(data.in[, -c(1:5)] ~ Natural_region*Protocol, data = site.information, method = "bray", permutations = 999, by = "term")
+write.csv(perma.results, file = "output/2018 data only/NR permanova results.csv", row.names = TRUE) # No difference in their dispersion
 rm(perma.results)
 
 # Analysis of dispersion (permadis analysis) Which one is more dispersed
-beta.results <- betadisper(d = vegdist(x = data.in[, -c(1,2,3,4)], method = "bray"), group = data.in$Protocol)
+beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:5)], method = "bray"), group = data.in$Protocol)
 anova(beta.results)
 write.csv(anova(beta.results), file = "output/2018 data only/permadisp results.csv", row.names = TRUE) # No difference in their dispersion
 

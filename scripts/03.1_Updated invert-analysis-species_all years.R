@@ -1,7 +1,7 @@
 #
 # Title: ABMI Invertebrate Species Groups Analysis
 # Created: October 1, 2025
-# Last Updated by Emily: October 31, 2025
+# Last Updated by Emily: December 11, 2025
 # Authors: Brandon Allen and Emily Holden
 # Objective: Perform a series of analyses that match and expand on the Hanisch et al (2020) manuscript comparing the ABMI and CABIN protocols
 # Keywords: Notes, Initialization, Site information, Species level
@@ -681,12 +681,60 @@ data.type <- "relative-abundance"
 data.in <- decostand(adj.count[,5:262], method = "total") #convert to relative abundance
 data.in <- cbind(adj.count[, 1:4], data.in)
 sum(is.na(data.in))
-summary(data.in)
+str(data.in)
 
 # Align the species data with the site data
 rownames(data.in) <- paste(data.in$Site, data.in$Protocol, sep = "_")
 #data.in <- data.in[rownames(site.information), ] # Match site order
 
+# Load NR region data to examine if NR drives trends in results
+NR.data <- read_rds("output/NR summary.rds") %>%
+  mutate(Site = paste0("W",Site)) #update sites to match wetland coding
+
+abmi.landcover <- NR.data %>%
+  inner_join(data.in %>% select(Site), by = "Site") %>% #select only sites in CABIN data
+  select(!SiteType)
+##create a duplicate df for the CABIN protocol data
+cabin.landcover <- abmi.landcover %>%
+  mutate(Site = paste0("CABIN-",Site))
+# join dfs
+landcover <- rbind(abmi.landcover, cabin.landcover)
+str(landcover)
+
+## add to data
+data.in <- data.in %>%
+  left_join(landcover, by = "Site") %>%
+  select(
+    any_of(c("Site", "Year", "SiteYear", "Protocol", "NRNAME")),
+    sort(setdiff(names(.), c("Site", "Year", "SiteYear", "Protocol", "NRNAME")))
+  )
+
+## isolate sites with NA values for NRNAME
+  ## note that these are duplicate sampling or B sites
+  ## I'll impute the NR from the base site
+landcover.NAs <- data.in %>%
+  filter(is.na(NRNAME)) %>% #select rows with NAs
+    select(Site) %>% #Not selecting NRNAME because I'll get that
+                    #from an inner_join later on
+  mutate(base_site = Site %>%
+           str_remove("^CABIN-") %>% # remove prefix
+           str_remove("-D$")) %>% # remove suffix
+  mutate(base_site = base_site %>%
+           str_remove("B$")) %>% #remove suffix
+  inner_join(NR.data %>% select(Site, NRNAME),
+             by = c("base_site" = "Site")) %>% # get NR data
+  select(!base_site) #drop unnecessary column
+
+## update data.in
+data.in <- data.in %>%
+  left_join(
+    landcover.NAs %>% select(Site, NRNAME_new = NRNAME),
+    by = "Site"
+  ) %>%
+  mutate(NRNAME = coalesce(NRNAME_new, NRNAME)) %>%
+  select(-NRNAME_new) %>%
+  rename(Natural_region = NRNAME)
+str(data.in)
 #
 # SIMPER
 #
@@ -695,7 +743,7 @@ rownames(data.in) <- paste(data.in$Site, data.in$Protocol, sep = "_")
 # and converts the matrix into a brays-curtis dissimilarity. Columns in the community matrix (e.g., species, familes, etc)
 # are listed in order of highest to lowest contribution.
 
-simper.results <- simper(comm = data.in[, -c(1:4)], group = data.in$Protocol,
+simper.results <- simper(comm = data.in[, -c(1:5)], group = data.in$Protocol,
                          permutations = 1000,
                          trace = TRUE)
 
@@ -703,8 +751,7 @@ simper.results <- simper(comm = data.in[, -c(1:4)], group = data.in$Protocol,
 # ChiroUA, OligoUA, AmphiUA, ChaobUA, GastrUA, and EphemUA are the top group
 summary(simper.results)
 write.csv(summary(simper.results)$ABMI_CABIN,
-          file = paste0("output/simper-analysis-adjusted-counts-species-level_2025-09-19.csv", row.names = TRUE))
-
+          file = paste0("output/simper-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE)
 
 # #
 # # RDA analyses
@@ -769,7 +816,7 @@ write.csv(summary(simper.results)$ABMI_CABIN,
 stress.values <- NULL
 for (axis.size in 1:10) {
 
-    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1:4)], distance = "bray",
+    stress.values <- c(stress.values, metaMDS(comm = data.in[, -c(1:5)], distance = "bray",
                                               k = axis.size, try = 100, trymax = 500)$stress)
 
 }
@@ -785,7 +832,7 @@ ggplot(data = stress.values, aes(x = k, y = Stress, color = "#829EBC")) +
 optimal.k <- as.numeric(table(stress.values$Stress < 0.2)["FALSE"]) + 1
 
 # Optimal value of K (3)
-nmds.results <- metaMDS(comm = data.in[, -c(1:4)], distance = "bray",
+nmds.results <- metaMDS(comm = data.in[, -c(1:5)], distance = "bray",
                         k = optimal.k, try = 100, trymax = 1000)
 
 # Lets assess the stress of the nmds using a shepard plot
@@ -799,6 +846,7 @@ data.scores <- as.data.frame(scores(nmds.results, display = "sites"))
 #Using the scores function from vegan to extract the site scores and convert to a data.frame
 data.scores$site <- rownames(data.scores)  # create a column of site names, from the rownames of data.scores
 data.scores$Protocol <- data.in$Protocol #  add the protocol variable
+data.scores$Natural_region <- data.in$Natural_region # add the NR name variable
 
 # Name change
 data.scores$Protocol <- gsub("ABMI", "ABMI", data.scores$Protocol)
@@ -809,6 +857,7 @@ data.in$Protocol <- gsub("ABMI", "ABMI", data.in$Protocol)
 data.in$Protocol <- gsub("CABIN", "CABIN", data.in$Protocol)
 
 # Store the ellipse information
+
 veganCovEllipse <- function (cov, center = c(0, 0), scale = 1, npoints = 100) {
 
     theta <- (0:npoints) * 2 * pi/npoints
@@ -854,7 +903,7 @@ species.scores$species <- rownames(species.scores)  # create a column of species
 head(species.scores)  # look at the data
 species.scores <- species.scores[rownames(summary(simper.results)$ABMI_CABIN)[1:10], ]
 
-png(filename = "figures/invertebrate-protocol-analyses/nmds-adjusted-counts-species-level_2025-09-19.png",
+png(filename = "figures/invertebrate-protocol-analyses/nmds-adjusted-counts-species-level.png",
     width = 2400,
     height = 2400,
     res = 300)
@@ -862,31 +911,50 @@ png(filename = "figures/invertebrate-protocol-analyses/nmds-adjusted-counts-spec
 print(ggplot() +
           #geom_polygon(data = hull.data, aes(x = NMDS1, y = NMDS2, fill = Protocol, group = Protocol), alpha = 0.30) + # add the convex hulls
           geom_text(data = species.scores, aes(x = NMDS1, y = NMDS2, label = species), alpha = 0.5) +  # add the species labels
-          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Protocol, colour = Protocol), size = 4) + # add the point markers
+          geom_point(data = data.scores, aes(x = NMDS1, y = NMDS2, shape = Natural_region, colour = Protocol), size = 4) + # add the point markers
           geom_path(data = ellipse.df, aes(x = NMDS1, y = NMDS2, group = Protocol, colour = Protocol)) +
           scale_color_manual(values = abmi_pal("main")(2)) +
           scale_fill_manual(values = abmi_pal("main")(2)) +
-          labs(title = "Taxonomically resolved data for all years") +
+          labs(title = "Taxonomically resolved data for all years",
+               shape = "Natural region") +
           coord_equal() +
           theme_bw())
 
 dev.off()
 
 # Permanova
+## update site.information for analyses
 site.information <- site.information %>%
-    mutate(Protocol = if_else(str_starts(Site, "CABIN"),"CABIN", "ABMI")) %>%
     filter(SiteYear %in% data.in$SiteYear) %>%
-    distinct(SiteYear, .keep_all = TRUE)
+    distinct(SiteYear, .keep_all = TRUE) %>%
+  full_join(data.in %>% select(Site, Natural_region), by = "Site") #add natural region data
 str(site.information)
-perma.results <- adonis2(data.in[, -c(1:4)] ~ Protocol, data = site.information, method = "bray", permutations = 999)
-write.csv(perma.results, file = "output/permanova results.csv", row.names = TRUE) # No difference in their dispersion
-#rm(perma.results)
 
-# Analysis of dispersion (permadis analysis) Which one is more dispersed
-beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:4)], method = "bray"), group = data.in$Protocol)
+## set rownames
+rownames(data.in) <- data.in$Site
+rownames(site.information) <- site.information$Site
+
+#reorder rows to match
+site.information <- site.information[rownames(data.in), ]
+
+## Protocol permanova
+perma.results <- adonis2(data.in[, -c(1:5)] ~ Protocol, data = site.information, method = "bray", permutations = 999)
+write.csv(perma.results, file = "output/protocol permanova results.csv", row.names = TRUE) # No difference in their dispersion
+rm(perma.results)
+
+##NR permanova
+perma.results <- adonis2(data.in[, -c(1:5)] ~ Protocol*Natural_region, data = site.information, method = "bray", permutations = 999, by = "terms")
+write.csv(perma.results, file = "output/NR permanova results.csv", row.names = TRUE) # No difference in their dispersion
+rm(perma.results)
+
+# Analysis of dispersion (permadis analysis) for protocol (Which one is more dispersed)
+beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:5)], method = "bray"), group = data.in$Protocol)
 anova(beta.results)
 #write.csv(anova(beta.results), file = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/tables/species/permadisp-analysis-", data.type, "-species-level_", Sys.Date(), ".csv"), row.names = TRUE) # No difference in their dispersion
 
+# Permadis for NR
+beta.results <- betadisper(d = vegdist(x = data.in[, -c(1:5)], method = "bray"), group = data.in$Natural_region)
+anova(beta.results)
 
 #
 # Procrustes test
@@ -917,10 +985,10 @@ colnames(before.data) <- colnames(pt.visual$X)
 after.data <- data.frame(pt.visual$Yrot)
 colnames(after.data) <- colnames(pt.visual$X)
 
-png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/procrustes-", data.type, "-species-level_", Sys.Date(), ".png"),
-    width = 2400,
-    height = 2400,
-    res = 300)
+# png(filename = paste0("D:/ABMI-covid-19/general-requests/RobH/invertebrate-protocol-analyses_2021/figures/species/ordination/procrustes-", data.type, "-species-level_", Sys.Date(), ".png"),
+#     width = 2400,
+#     height = 2400,
+#     res = 300)
 
 print(ggplot() +
           geom_point(data = after.data, aes(x = NMDS1, y = NMDS2, color = "ABMI"), size = 3, show.legend = FALSE) + # add the point markers
@@ -933,4 +1001,4 @@ print(ggplot() +
           coord_equal() +
           theme_bw())
 
-dev.off()
+# dev.off()
